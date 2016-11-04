@@ -1,11 +1,10 @@
 #Download package
-wget http://downloads.sourceforge.net/project/pgbadger/7.0/pgbadger-7.0.tar.gz?r=http%3A%2F%2Fsourceforge.net%2Fprojects%2Fpgbadger%2F&ts=1436528468&use_mirror=ufpr -O pgbadger-7.0.tar.gz
-tar -zxvf pgbadger-7.0.tar.gz
-cd pgbadger-7.0
-perl Makefile.PL
-make && sudo make install
+#For RPM packages, you can find the pgBadger package at the PostgreSQL yum repository (http://yum.postgresql.org/packages.php)
+yum install pgbadger
 
-#If your log_destination was set to 'csvlog' execute this procedure
+#Packages for Debian and Ubuntu are available in the PostgreSQL apt repository(https://wiki.postgresql.org/wiki/Apt).
+
+#If your log_destination was set to 'csvlog' execute this procedure.
 
 sudo perl -MCPAN -e "shell"
 
