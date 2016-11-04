@@ -1,8 +1,8 @@
 #!/bin/bash
-BUCKET="s3://<your_bucket_name>/"
-PGBADGERLOGS="<storage_pgbadger_logs>"
-JOBS=$1
-RETENTION=$2
+BUCKET="s3://<your_bucket_name>/" #s3 bucket name
+PGBADGERLOGS="<storage_pgbadger_logs>" #directory where out file must be saved
+JOBS=$1 #number of jobs to run at same time
+RETENTION=$2 #number of week to keep in incremental mode
 
 execute_analyze () {
     if [[ ${JOBS} -ne '' && ${RETENTION} -ne '' ]]; then
