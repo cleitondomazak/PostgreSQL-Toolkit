@@ -6,7 +6,7 @@ RETENTION=$2 #number of week to keep in incremental mode
 
 execute_analyze () {
     if [[ ${JOBS} -ne '' && ${RETENTION} -ne '' ]]; then
-            pgbadger -j ${JOBS} --exclude-query="^(COPY|COMMIT)" -I -O ${PGBADGERLOGS} -R ${RETENTION} ${PGDATA}/pg_log/postgresql-$(date --date yesterday +%a) ${PGDATA}/pg_log/postgresql-$(date +%a).log
+            pgbadger -j ${JOBS} --exclude-query="^(COPY|COMMIT)" -I -O ${PGBADGERLOGS} -R ${RETENTION} ${PGDATA}/pg_log/postgresql-$(date --date yesterday +%a).log ${PGDATA}/pg_log/postgresql-$(date +%a).log
             aws s3 sync ${PGBADGERLOGS} ${BUCKET}
     else
             exit 1
