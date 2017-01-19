@@ -6,6 +6,12 @@ USERNAME=postgres
 # Host name (or IP address) of PostgreSQL server e.g localhost
 DBHOST=localhost
 
+#Backup type (plain or custom)
+BACKUPTYPE="custom"
+
+#Specify the compression level to use. Default is 5
+COMPRESIONLEVEL=5
+
 # List of DBNAMES for Daily/Weekly Backup e.g. "DB1 DB2 DB3"
 DBNAMES="all"
 
@@ -82,17 +88,31 @@ exec 6>&1           # Link file descriptor #6 with stdout.
                     # Saves stdout.
 exec > $LOGFILE     # stdout replaced with file $LOGFILE.
 
+#Set option for create database command on backup file
+  if [ CREATE_DATABASE == 'yes' ]
+  then
+    CREATEDB=' --create'
+  fi
 
 # Functions
+check(){
+ "$@"
+ status=$?
+ if [ $status -ne 0 ]; then
+	touch	$BACKUPDIR/error
+	return 2
+ fi
+}
 
 # Database dump function
-dbdump () {
-  if [ CREATE_DATABASE == 'yes' ]; then
-    CREATEDB=" --create"
+  if [ $BACKUPTYPE = 'plain' ]
+  then
+    BACKUPEXT='sql'
+    dbdump="pg_dump $HOST $OPT $CREATEDB"
+  else
+    BACKUPEXT='dump'
+    dbdump="pg_dump $HOST $OPT -Fc -Z $COMPRESIONLEVEL"
   fi
-pg_dump --username=$USERNAME $HOST $OPT $CREATEDB $1 > $2
-return 0
-}
 
 # Compression function
 SUFFIX=""
@@ -112,7 +132,6 @@ else
 fi
 return 0
 }
-
 
 # Run command before we begin
 if [ "$PREBACKUP" ]
@@ -136,15 +155,14 @@ fi
 
 # If backing up all DBs on the server
 if [ "$DBNAMES" = "all" ]; then
-	DBNAMES="`psql -U $USERNAME $HOST $OPT -l -A -F: | sed -ne "/:/ { /Name:Owner/d; /template0/d; s/:.*$//; p }"`"
+	DBNAMES="`check psql -U $USERNAME $HOST $OPT -l -A -F: | sed -ne "/:/ { /Name:Owner/d; /template0/d; s/:.*$//; p }"`"
 
 	# If DBs are excluded
 	for exclude in $DBEXCLUDE
 	do
 		DBNAMES=`echo $DBNAMES | sed "s/\b$exclude\b//g"`
 	done
-
-        MDBNAMES=$DBNAMES
+    MDBNAMES=$DBNAMES
 fi
 
 echo ======================================================================
@@ -166,10 +184,9 @@ echo ======================================================================
 				mkdir -p "$BACKUPDIR/monthly/$MDB"
 			fi
 			echo Monthly Backup of $MDB...
-				dbdump "$MDB" "$BACKUPDIR/monthly/$MDB/${MDB}_$DATE.$M.$MDB.sql"
-				compression "$BACKUPDIR/monthly/$MDB/${MDB}_$DATE.$M.$MDB.sql"
-				BACKUPFILES="$BACKUPFILES $BACKUPDIR/monthly/$MDB/${MDB}_$DATE.$M.$MDB.sql$SUFFIX"
-			echo ----------------------------------------------------------------------
+				$dbdump -f "$BACKUPDIR/monthly/$MDB/${MDB}_$DATE.$M.$MDB.$BACKUPEXT" -U $USERNAME "$MDB"
+    		compression "$BACKUPDIR/monthly/$MDB/${MDB}_$DATE.$M.$MDB.$BACKUPEXT"
+    	echo ----------------------------------------------------------------------
 		done
 	fi
 
@@ -183,7 +200,6 @@ echo ======================================================================
 		then
 		mkdir -p "$BACKUPDIR/daily/$DB"
 	fi
-
 	if [ ! -e "$BACKUPDIR/weekly/$DB" ]		# Check Weekly DB Directory exists.
 		then
 		mkdir -p "$BACKUPDIR/weekly/$DB"
@@ -202,23 +218,21 @@ echo ======================================================================
 			fi
 		eval rm -fv "$BACKUPDIR/weekly/$DB/week.$REMW.*"
 		echo
-			dbdump "$DB" "$BACKUPDIR/weekly/$DB/${DB}_week.$W.$DATE.sql"
-			compression "$BACKUPDIR/weekly/$DB/${DB}_week.$W.$DATE.sql"
-			BACKUPFILES="$BACKUPFILES $BACKUPDIR/weekly/$DB/${DB}_week.$W.$DATE.sql$SUFFIX"
-		echo ----------------------------------------------------------------------
+			$dbdump -f "$BACKUPDIR/weekly/$DB/${DB}_week.$W.$DATE.$BACKUPEXT" -U $USERNAME "$DB"
+			compression "$BACKUPDIR/weekly/$DB/${DB}_week.$W.$DATE.$BACKUPEXT"
+    echo ----------------------------------------------------------------------
 
 	# Daily Backup
 	else
 		echo Daily Backup of Database \( $DB \)
 		echo Rotating last weeks Backup...
-		eval rm -fv "$BACKUPDIR/daily/$DB/*.$DOW.sql.*"
+		eval rm -fv "$BACKUPDIR/daily/$DB/*.$DOW.$BACKUPEXT.*"
 		echo
-			dbdump "$DB" "$BACKUPDIR/daily/$DB/${DB}_$DATE.$DOW.sql"
-			compression "$BACKUPDIR/daily/$DB/${DB}_$DATE.$DOW.sql"
-			BACKUPFILES="$BACKUPFILES $BACKUPDIR/daily/$DB/${DB}_$DATE.$DOW.sql$SUFFIX"
-		echo ----------------------------------------------------------------------
-	fi
+			check $dbdump -f  "$BACKUPDIR/daily/$DB/${DB}_$DATE.$DOW.$BACKUPEXT" -U $USERNAME "$DB"
+			compression "$BACKUPDIR/daily/$DB/${DB}_$DATE.$DOW.$BACKUPEXT"
+  fi
 	done
+
 echo Backup End `date`
 echo ======================================================================
 
@@ -228,9 +242,8 @@ echo ======================================================================
 	# Monthly Full Backup of all Databases
 	if [ $DOM = "01" ]; then
 		echo Monthly full Backup of \( $MDBNAMES \)...
-			dbdump "$MDBNAMES" "$BACKUPDIR/monthly/$DATE.$M.all-databases.sql"
-			compression "$BACKUPDIR/monthly/$DATE.$M.all-databases.sql"
-			BACKUPFILES="$BACKUPFILES $BACKUPDIR/monthly/$DATE.$M.all-databases.sql$SUFFIX"
+			$dbdump -f "$BACKUPDIR/monthly/$DATE.$M.all-databases.$BACKUPEXT"  -U $USERNAME "$MDBNAMES"
+			compression "$BACKUPDIR/monthly/$DATE.$M.all-databases.$BACKUPEXT"
 		echo ----------------------------------------------------------------------
 	fi
 
@@ -248,9 +261,8 @@ echo ======================================================================
 			fi
 		eval rm -fv "$BACKUPDIR/weekly/week.$REMW.*"
 		echo
-			dbdump "$DBNAMES" "$BACKUPDIR/weekly/week.$W.$DATE.sql"
-			compression "$BACKUPDIR/weekly/week.$W.$DATE.sql"
-			BACKUPFILES="$BACKUPFILES $BACKUPDIR/weekly/week.$W.$DATE.sql$SUFFIX"
+			$dbdump -f "$BACKUPDIR/weekly/week.$W.$DATE.$BACKUPEXT" -U $USERNAME "$DBNAMES"
+      compression "$BACKUPDIR/weekly/week.$W.$DATE.$BACKUPEXT"
 		echo ----------------------------------------------------------------------
 
 	# Daily Backup
@@ -258,11 +270,10 @@ echo ======================================================================
 		echo Daily Backup of Databases \( $DBNAMES \)
 		echo
 		echo Rotating last weeks Backup...
-		eval rm -fv "$BACKUPDIR/daily/*.$DOW.sql.*"
+		eval rm -fv "$BACKUPDIR/daily/*.$DOW.$BACKUPEXT.*"
 		echo
-			dbdump "$DBNAMES" "$BACKUPDIR/daily/$DATE.$DOW.sql"
-			compression "$BACKUPDIR/daily/$DATE.$DOW.sql"
-			BACKUPFILES="$BACKUPFILES $BACKUPDIR/daily/$DATE.$DOW.sql$SUFFIX"
+			$dbdump -f "$BACKUPDIR/daily/$DATE.$DOW.$BACKUPEXT" -U $USERNAME "$DBNAMES"
+			compression "$BACKUPDIR/daily/$DATE.$DOW.$BACKUPEXT"
 		echo ----------------------------------------------------------------------
 	fi
 echo Backup End Time `date`
@@ -271,7 +282,6 @@ fi
 echo Total disk space used for backup storage..
 echo Size - Location
 echo `du -hs "$BACKUPDIR"`
-echo
 
 #Send to S3
 if [ "$SEND_TO_S3" = "Yes" ]
@@ -295,24 +305,25 @@ fi
 #Clean up IO redirection
 exec 1>&6 6>&-      # Restore stdout and close file descriptor #6.
 
-ERRORONLOG=`cat $LOGFILE | grep "ERROR|FATAL" | wc -l`
-if [ $ERRORONLOG == 0 ]
+if [ -f "$BACKUPDIR/error" ]
 then
+	{
+		echo To: $MAILADDR
+		echo From: $MAILADDR
+		echo Subject: ERROR on PostgreSQL Backup for $DBHOST - $DATE
+		cat $BACKUPDIR/errorlog.txt
+} | /usr/sbin/ssmtp $MAILADDR
+else
 	{
     echo To: $MAILADDR
     echo From: $MAILADDR
     echo Subject: SUCCESS on PostgreSQL Backup Log for $DBHOST - $DATE
     cat $LOGFILE
 } | /usr/sbin/ssmtp $MAILADDR
-else
-  {
-    echo To: $MAILADDR
-    echo From: $MAILADDR
-    echo Subject: ERROR on PostgreSQL Backup for $DBHOST - $DATE
-    cat $LOGFILE
-} | /usr/sbin/ssmtp $MAILADDR
 fi
 
 # Clean up Logfile
+eval rm -f "$BACKUPDIR/error"
+eval rm -f "$ERRORLOG"
 eval rm -f "$LOGFILE"
 exit 0
