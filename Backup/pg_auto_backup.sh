@@ -19,11 +19,14 @@ DBNAMES="all"
 BACKUPDIR="/storage/backups"
 
 #Send to Amazon S3
-SEND_TO_S3="Yes"
+SEND_TO_S3="yes"
 BUCKETNAME="s3://your-s3-bucket/"
 
 # Email Address to send mail to? (user@domain.com)
 MAILADDR="dba@domain.com"
+
+#Zabbix integration
+ZABBIXSENDER="yes"
 
 # List of DBBNAMES for Monthly Backups.
 MDBNAMES="template1 $DBNAMES"
@@ -33,9 +36,6 @@ DBEXCLUDE=""
 
 # Include CREATE DATABASE in backup?
 CREATE_DATABASE=yes
-
-# Separate backup directory and file for each DB? (yes or no)
-SEPDIR=yes
 
 # Which day do you want weekly backups? (1 to 7 where 1 is Monday)
 DOWEEKLY=6
@@ -89,7 +89,7 @@ exec 6>&1           # Link file descriptor #6 with stdout.
 exec > $LOGFILE     # stdout replaced with file $LOGFILE.
 
 #Set option for create database command on backup file
-  if [ CREATE_DATABASE == 'yes' ]
+  if [ $CREATE_DATABASE == 'yes' ]
   then
     CREATEDB=' --create'
   fi
@@ -100,6 +100,9 @@ check(){
  status=$?
  if [ $status -ne 0 ]; then
 	touch	$BACKUPDIR/error
+	if [ $ZABBIXSENDER == 'yes' ]; then
+		zabbix_sender -c /etc/zabbix/zabbix_agentd.conf -k backup_failed[$DB] -o 1
+	fi
 	return 2
  fi
 }
@@ -148,7 +151,7 @@ fi
 # Hostname for LOG information
 if [ "$DBHOST" = "localhost" ]; then
 	DBHOST="`hostname -f`"
-	HOST=""
+	HOST="-h 127.0.0.1"
 else
 	HOST="-h $DBHOST"
 fi
@@ -169,31 +172,13 @@ echo ======================================================================
 echo Backup of Database Server - $DBHOST
 echo ======================================================================
 
-# Test is seperate DB backups are required
-if [ "$SEPDIR" = "yes" ]; then
+# Start Backup
 echo Backup Start Time `date`
 echo ======================================================================
-	# Monthly Full Backup of all Databases
-	if [ $DOM = "01" ]; then
-		for MDB in $MDBNAMES
-		do
-		        MDB="`echo $MDB | sed 's/%/ /g'`"
-
-			if [ ! -e "$BACKUPDIR/monthly/$MDB" ]		# Check Monthly DB Directory exists.
-			then
-				mkdir -p "$BACKUPDIR/monthly/$MDB"
-			fi
-			echo Monthly Backup of $MDB...
-				$dbdump -f "$BACKUPDIR/monthly/$MDB/${MDB}_$DATE.$M.$MDB.$BACKUPEXT" -U $USERNAME "$MDB"
-    		compression "$BACKUPDIR/monthly/$MDB/${MDB}_$DATE.$M.$MDB.$BACKUPEXT"
-    	echo ----------------------------------------------------------------------
-		done
-	fi
-
-	for DB in $DBNAMES
-	do
 	# Prepare $DB for using
-	DB="`echo $DB | sed 's/%/ /g'`"
+	for DB in $MDBNAMES
+	do
+		DB="`echo $DB | sed 's/%/ /g'`"
 
 	# Create Separate directory for each DB
 	if [ ! -e "$BACKUPDIR/daily/$DB" ]		# Check Daily DB Directory exists.
@@ -204,9 +189,21 @@ echo ======================================================================
 		then
 		mkdir -p "$BACKUPDIR/weekly/$DB"
 	fi
+	if [ ! -e "$BACKUPDIR/monthly/$DB" ]		# Check Weekly DB Directory exists.
+		then
+		mkdir -p "$BACKUPDIR/monthly/$DB"
+	fi
 
-	# Weekly Backup
-	if [ $DNOW = $DOWEEKLY ]; then
+	#monthly backup
+
+	if [ $DOM = "01" ]; then
+		echo Monthly Backup of $DB...
+			check $dbdump -f "$BACKUPDIR/monthly/$DB/${DB}_$DATE.$M.$DB.$BACKUPEXT" -U $USERNAME "$DB"
+    	compression "$BACKUPDIR/monthly/$DB/${DB}_$DATE.$M.$DB.$BACKUPEXT"
+    echo ----------------------------------------------------------------------
+
+	#weekly backup
+	elif [ $DNOW = $DOWEEKLY ]; then
 		echo Weekly Backup of Database \( $DB \)
 		echo Rotating 5 weeks Backups...
 			if [ "$W" -le 05 ];then
@@ -218,7 +215,7 @@ echo ======================================================================
 			fi
 		eval rm -fv "$BACKUPDIR/weekly/$DB/week.$REMW.*"
 		echo
-			$dbdump -f "$BACKUPDIR/weekly/$DB/${DB}_week.$W.$DATE.$BACKUPEXT" -U $USERNAME "$DB"
+			check $dbdump -f "$BACKUPDIR/weekly/$DB/${DB}_week.$W.$DATE.$BACKUPEXT" -U $USERNAME "$DB"
 			compression "$BACKUPDIR/weekly/$DB/${DB}_week.$W.$DATE.$BACKUPEXT"
     echo ----------------------------------------------------------------------
 
@@ -228,65 +225,21 @@ echo ======================================================================
 		echo Rotating last weeks Backup...
 		eval rm -fv "$BACKUPDIR/daily/$DB/*.$DOW.$BACKUPEXT.*"
 		echo
-			check $dbdump -f  "$BACKUPDIR/daily/$DB/${DB}_$DATE.$DOW.$BACKUPEXT" -U $USERNAME "$DB"
+			check $dbdump -f "$BACKUPDIR/daily/$DB/${DB}_$DATE.$DOW.$BACKUPEXT" -U $USERNAME "$DB"
 			compression "$BACKUPDIR/daily/$DB/${DB}_$DATE.$DOW.$BACKUPEXT"
   fi
 	done
-
 echo Backup End `date`
-echo ======================================================================
+echo =====================================================================
 
-else # One backup file for all DBs
-echo Backup Start `date`
-echo ======================================================================
-	# Monthly Full Backup of all Databases
-	if [ $DOM = "01" ]; then
-		echo Monthly full Backup of \( $MDBNAMES \)...
-			$dbdump -f "$BACKUPDIR/monthly/$DATE.$M.all-databases.$BACKUPEXT"  -U $USERNAME "$MDBNAMES"
-			compression "$BACKUPDIR/monthly/$DATE.$M.all-databases.$BACKUPEXT"
-		echo ----------------------------------------------------------------------
-	fi
-
-	# Weekly Backup
-	if [ $DNOW = $DOWEEKLY ]; then
-		echo Weekly Backup of Databases \( $DBNAMES \)
-		echo
-		echo Rotating 5 weeks Backups...
-			if [ "$W" -le 05 ];then
-				REMW=`expr 48 + $W`
-			elif [ "$W" -lt 15 ];then
-				REMW=0`expr $W - 5`
-			else
-				REMW=`expr $W - 5`
-			fi
-		eval rm -fv "$BACKUPDIR/weekly/week.$REMW.*"
-		echo
-			$dbdump -f "$BACKUPDIR/weekly/week.$W.$DATE.$BACKUPEXT" -U $USERNAME "$DBNAMES"
-      compression "$BACKUPDIR/weekly/week.$W.$DATE.$BACKUPEXT"
-		echo ----------------------------------------------------------------------
-
-	# Daily Backup
-	else
-		echo Daily Backup of Databases \( $DBNAMES \)
-		echo
-		echo Rotating last weeks Backup...
-		eval rm -fv "$BACKUPDIR/daily/*.$DOW.$BACKUPEXT.*"
-		echo
-			$dbdump -f "$BACKUPDIR/daily/$DATE.$DOW.$BACKUPEXT" -U $USERNAME "$DBNAMES"
-			compression "$BACKUPDIR/daily/$DATE.$DOW.$BACKUPEXT"
-		echo ----------------------------------------------------------------------
-	fi
-echo Backup End Time `date`
-echo ======================================================================
-fi
 echo Total disk space used for backup storage..
 echo Size - Location
 echo `du -hs "$BACKUPDIR"`
 
 #Send to S3
-if [ "$SEND_TO_S3" = "Yes" ]
+if [ "$SEND_TO_S3" = "yes" ]
   then
-  aws s3 sync $BACKUPDIR $BUCKETNAME
+  check aws s3 sync $BACKUPDIR $BUCKETNAME
 else
   echo "Backup saved on $BACKUPDIR"
 fi
