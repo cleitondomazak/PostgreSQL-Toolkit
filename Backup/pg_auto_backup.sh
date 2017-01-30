@@ -108,7 +108,8 @@ check(){
 }
 
 # Database dump function
-  if [ $BACKUPTYPE = 'plain' ]
+	HOST="-h $DBHOST"
+	if [ $BACKUPTYPE = 'plain' ]
   then
     BACKUPEXT='sql'
     dbdump="pg_dump $HOST $OPT $CREATEDB"
@@ -146,14 +147,6 @@ if [ "$PREBACKUP" ]
 	echo
 	echo ======================================================================
 	echo
-fi
-
-# Hostname for LOG information
-if [ "$DBHOST" = "localhost" ]; then
-	DBHOST="`hostname -f`"
-	HOST="-h 127.0.0.1"
-else
-	HOST="-h $DBHOST"
 fi
 
 # If backing up all DBs on the server
