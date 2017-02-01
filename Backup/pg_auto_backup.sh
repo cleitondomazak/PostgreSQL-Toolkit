@@ -16,11 +16,11 @@ COMPRESIONLEVEL=5
 DBNAMES="all"
 
 # Backup directory location e.g /backups
-BACKUPDIR="/storage/backups"
+BACKUPDIR="/storage/backup"
 
 #Send to Amazon S3
 SEND_TO_S3="yes"
-BUCKETNAME="s3://your-s3-bucket/"
+BUCKETNAME="s3://your-s3-bucket"
 
 # Email Address to send mail to? (user@domain.com)
 MAILADDR="dba@domain.com"
@@ -94,6 +94,14 @@ exec > $LOGFILE     # stdout replaced with file $LOGFILE.
     CREATEDB=' --create'
   fi
 
+#Set extension
+if [ $BACKUPTYPE = 'plain' ]
+then
+  BACKUPEXT='sql'
+else
+  BACKUPEXT='dump'
+fi
+
 # Functions
 check(){
  "$@"
@@ -101,36 +109,46 @@ check(){
  if [ $status -ne 0 ]; then
 	touch	$BACKUPDIR/error
 	if [ $ZABBIXSENDER == 'yes' ]; then
-		zabbix_sender -c /etc/zabbix/zabbix_agentd.conf -k backup_failed[$DB] -o 1
+		zabbix_sender -c /etc/zabbix/zabbix_agentd.conf -k backup_failed[$DB] -o 1 > /dev/null
 	fi
+else
+  if [ $ZABBIXSENDER == 'yes' ]; then
+  zabbix_sender -c /etc/zabbix/zabbix_agentd.conf -k backup_failed[$DB] -o 0 > /dev/null
+fi
 	return 2
  fi
 }
 
-# Database dump function
-	HOST="-h $DBHOST"
-	if [ $BACKUPTYPE = 'plain' ]
+sends3(){
+if [ "$SEND_TO_S3" = "yes" ]
   then
-    BACKUPEXT='sql'
-    dbdump="pg_dump $HOST $OPT $CREATEDB"
+  check aws s3 cp "$BACKUPNAME" "$BUCKETNAME"/"$BACKUP"/$DB.$BACKUPEXT
+else
+  echo "Backup saved on $BACKUPDIR"
+fi
+}
+
+# Database dump
+dumpdatabase(){
+	HOST="-h $DBHOST"
+  if [ $BACKUPTYPE = 'plain' ]
+  then
+    check pg_dump $HOST $OPT $CREATEDB -f "$BACKUPNAME" -U $USERNAME "$DB"
   else
-    BACKUPEXT='dump'
-    dbdump="pg_dump $HOST $OPT -Fc -Z $COMPRESIONLEVEL"
+    check pg_dump $HOST $OPT -Fc -Z $COMPRESIONLEVEL -f "$BACKUPNAME" -U $USERNAME "$DB"
   fi
+}
 
 # Compression function
-SUFFIX=""
 compression () {
 if [ "$COMP" = "gzip" ]; then
-	gzip -f "$1"
+	gzip -f "$BACKUPNAME"
 	echo
-	echo Backup Information for "$1"
-	gzip -l "$1.gz"
-	SUFFIX=".gz"
+	echo Backup Information for "$BACKUPNAME"
+	gzip -l "$BACKUPNAME.gz"
 elif [ "$COMP" = "bzip2" ]; then
-	echo Compression information for "$1.bz2"
-	bzip2 -f -v $1 2>&1
-	SUFFIX=".bz2"
+	echo Compression information for "$BACKUPNAME.bz2"
+	bzip2 -f -v "$BACKUPNAME" 2>&1
 else
 	echo "No compression option set, check advanced settings"
 fi
@@ -186,18 +204,22 @@ echo ======================================================================
 		then
 		mkdir -p "$BACKUPDIR/monthly/$DB"
 	fi
-
 	#monthly backup
 
 	if [ $DOM = "01" ]; then
-		echo Monthly Backup of $DB...
-			check $dbdump -f "$BACKUPDIR/monthly/$DB/${DB}_$DATE.$M.$DB.$BACKUPEXT" -U $USERNAME "$DB"
-    	compression "$BACKUPDIR/monthly/$DB/${DB}_$DATE.$M.$DB.$BACKUPEXT"
+    BACKUP="monthly"
+    BACKUPNAME="$BACKUPDIR/$BACKUP/$DB/${DB}_$DATE.$DB.$BACKUPEXT"
+    echo Monthly Backup of $DB...
+			dumpdatabase
+    	compression
+      sends3
     echo ----------------------------------------------------------------------
 
 	#weekly backup
 	elif [ $DNOW = $DOWEEKLY ]; then
-		echo Weekly Backup of Database \( $DB \)
+    BACKUP="weekly"
+    BACKUPNAME="$BACKUPDIR/$BACKUP/$DB/${DB}_$DATE.$DB.$BACKUPEXT"
+    echo Weekly Backup of Database \( $DB \)
 		echo Rotating 5 weeks Backups...
 			if [ "$W" -le 05 ];then
 				REMW=`expr 48 + $W`
@@ -206,20 +228,22 @@ echo ======================================================================
 			else
 				REMW=`expr $W - 5`
 			fi
-		eval rm -fv "$BACKUPDIR/weekly/$DB/week.$REMW.*"
 		echo
-			check $dbdump -f "$BACKUPDIR/weekly/$DB/${DB}_week.$W.$DATE.$BACKUPEXT" -U $USERNAME "$DB"
-			compression "$BACKUPDIR/weekly/$DB/${DB}_week.$W.$DATE.$BACKUPEXT"
+			dumpdatabase
+			compression
+      sends3
     echo ----------------------------------------------------------------------
 
 	# Daily Backup
 	else
-		echo Daily Backup of Database \( $DB \)
+    BACKUP="daily"
+    BACKUPNAME="$BACKUPDIR/$BACKUP/$DB/${DB}_$DATE.$DB.$BACKUPEXT"
+    echo Daily Backup of Database \( $DB \)
 		echo Rotating last weeks Backup...
-		eval rm -fv "$BACKUPDIR/daily/$DB/*.$DOW.$BACKUPEXT.*"
 		echo
-			check $dbdump -f "$BACKUPDIR/daily/$DB/${DB}_$DATE.$DOW.$BACKUPEXT" -U $USERNAME "$DB"
-			compression "$BACKUPDIR/daily/$DB/${DB}_$DATE.$DOW.$BACKUPEXT"
+			dumpdatabase
+			compression
+      sends3
   fi
 	done
 echo Backup End `date`
@@ -229,13 +253,6 @@ echo Total disk space used for backup storage..
 echo Size - Location
 echo `du -hs "$BACKUPDIR"`
 
-#Send to S3
-if [ "$SEND_TO_S3" = "yes" ]
-  then
-  check aws s3 sync $BACKUPDIR $BUCKETNAME
-else
-  echo "Backup saved on $BACKUPDIR"
-fi
 
 # Run command when we're done
 if [ "$POSTBACKUP" ]
