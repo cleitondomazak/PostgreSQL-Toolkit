@@ -81,13 +81,6 @@ if [ ! -e "$BACKUPDIR/monthly" ]	# Check Monthly Directory exists.
 fi
 
 
-# IO redirection for logging.
-eval rm -f *.log
-touch $LOGFILE
-exec 6>&1           # Link file descriptor #6 with stdout.
-                    # Saves stdout.
-exec > $LOGFILE     # stdout replaced with file $LOGFILE.
-
 #Set option for create database command on backup file
   if [ $CREATE_DATABASE == 'yes' ]
   then
@@ -119,10 +112,19 @@ fi
  fi
 }
 
+#Backup Rotate
+rotate() {
+	if [ "${FILE_ROTATE}" == "yes" ] ; then
+	    find "${BACKUPDIR}" -type f -iname "*${DB}.*" -mtime +"${RETENTION}" -delete
+	fi
+}
+
+
+#Send to S3
 sends3(){
 if [ "$SEND_TO_S3" = "yes" ]
   then
-  check aws s3 cp "$BACKUPNAME" "$BUCKETNAME"/"$BACKUP"/$DB.$BACKUPEXT
+check aws s3 cp "$BACKUPNAME"."$COMPEXT" "$BUCKETNAME"/"$BACKUP"/"$DB"/
 else
   echo "Backup saved on $BACKUPDIR"
 fi
@@ -145,9 +147,11 @@ if [ "$COMP" = "gzip" ]; then
 	gzip -f "$BACKUPNAME"
 	echo
 	echo Backup Information for "$BACKUPNAME"
+	COMPEXT="gz"
 	gzip -l "$BACKUPNAME.gz"
 elif [ "$COMP" = "bzip2" ]; then
 	echo Compression information for "$BACKUPNAME.bz2"
+	COMPEXT="bz2"
 	bzip2 -f -v "$BACKUPNAME" 2>&1
 else
 	echo "No compression option set, check advanced settings"
