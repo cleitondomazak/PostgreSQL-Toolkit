@@ -66,7 +66,6 @@ OPT=""						# --port for example
 eval rm -f *.log
 touch $LOGFILE
 exec 6>&1           # Link file descriptor #6 with stdout.
-                    # Saves stdout.
 exec > $LOGFILE     # stdout replaced with file $LOGFILE.
 
 # Create required directories
@@ -142,12 +141,11 @@ fi
 
 # Database dump
 dumpdatabase(){
-	HOST="-h $DBHOST"
-  if [ $BACKUPTYPE = 'plain' ]
+	if [ $BACKUPTYPE = 'plain' ]
   then
-    check pg_dump $HOST $OPT $CREATEDB -f "$BACKUPNAME" -U $USERNAME "$DB"
+    check pg_dump -h $DBHOST $OPT $CREATEDB -f "$BACKUPNAME" -U $USERNAME "$DB"
   else
-    check pg_dump $HOST $OPT -Fc -Z $COMPRESIONLEVEL -f "$BACKUPNAME" -U $USERNAME "$DB"
+    check pg_dump $DBHOST $OPT -Fc -Z $COMPRESIONLEVEL -f "$BACKUPNAME" -U $USERNAME "$DB"
   fi
 }
 
@@ -183,7 +181,7 @@ fi
 
 # If backing up all DBs on the server
 if [ "$DBNAMES" = "all" ]; then
-	DBNAMES="`check psql -U $USERNAME $HOST $OPT -l -A -F: | sed -ne "/:/ { /Name:Owner/d; /template0/d; s/:.*$//; p }"`"
+	DBNAMES="`check psql -U $USERNAME -h $DBHOST $OPT -l -A -F: | sed -ne "/:/ { /Name:Owner/d; /template0/d; s/:.*$//; p }"`"
 
 	# If DBs are excluded
 	for exclude in $DBEXCLUDE
