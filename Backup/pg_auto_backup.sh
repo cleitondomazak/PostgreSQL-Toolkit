@@ -18,6 +18,9 @@ DBNAMES="all"
 # Backup directory location e.g /backups
 BACKUPDIR="/storage/backup"
 
+#Retention
+RETENTION="1"
+
 #Send to Amazon S3
 SEND_TO_S3="yes"
 BUCKETNAME="s3://your-s3-bucket"
@@ -58,6 +61,13 @@ M=`date +%B`					# Month e.g January
 W=`date +%V`					# Week Number e.g 37
 LOGFILE=$BACKUPDIR/$DBHOST-`date +%d%m%y%H%M%S`.log	# Logfile Name
 OPT=""						# --port for example
+
+# IO redirection for logging.
+eval rm -f *.log
+touch $LOGFILE
+exec 6>&1           # Link file descriptor #6 with stdout.
+                    # Saves stdout.
+exec > $LOGFILE     # stdout replaced with file $LOGFILE.
 
 # Create required directories
 if [ ! -e "$BACKUPDIR" ]		# Check Backup Directory exists.
