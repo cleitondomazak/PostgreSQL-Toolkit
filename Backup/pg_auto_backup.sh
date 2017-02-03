@@ -124,7 +124,7 @@ fi
 #Backup Rotate
 rotate() {
 	if [ "${FILE_ROTATE}" == "yes" ] ; then
-	    find "${BACKUPDIR}" -type f -iname "*${DB}.*" -mtime +"${RETENTION}" -delete
+	    find "${BACKUPDIR}" -type f -iname "${DB}*" -mtime +"${RETENTION}" -delete
 	fi
 }
 
@@ -225,6 +225,7 @@ echo ======================================================================
 			dumpdatabase
     	compression
       sends3
+      rotate
     echo ----------------------------------------------------------------------
 
 	#weekly backup
@@ -244,6 +245,7 @@ echo ======================================================================
 			dumpdatabase
 			compression
       sends3
+      rotate
     echo ----------------------------------------------------------------------
 
 	# Daily Backup
@@ -256,6 +258,7 @@ echo ======================================================================
 			dumpdatabase
 			compression
       sends3
+      rotate
   fi
 	done
 echo Backup End `date`
