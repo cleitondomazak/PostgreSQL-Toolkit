@@ -19,6 +19,7 @@ DBNAMES="all"
 BACKUPDIR="/storage/backup"
 
 #Retention
+FILE_ROTATE="yes"
 RETENTION="1"
 
 #Send to Amazon S3
