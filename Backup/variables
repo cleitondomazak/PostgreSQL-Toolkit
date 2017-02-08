@@ -1,0 +1,52 @@
+# Username to access the PostgreSQL server e.g. dbuser
+USERNAME=postgres
+
+# Host name (or IP address) of PostgreSQL server e.g localhost
+DBHOST=localhost
+
+#Backup type (plain or custom)
+BACKUPTYPE="custom"
+
+#Specify the compression level to use. Default is 5
+COMPRESIONLEVEL=5
+
+# List of DBNAMES for Daily/Weekly Backup e.g. "DB1 DB2 DB3"
+DBNAMES="all"
+
+# Backup directory location e.g /backups
+BACKUPDIR="/storage/backup"
+
+#Retention
+FILE_ROTATE="yes"
+RETENTION="1"
+
+#Send to Amazon S3
+SEND_TO_S3="yes"
+BUCKETNAME="s3://your-s3-bucket"
+
+# Email Address to send mail to? (user@domain.com)
+MAILADDR="dba@domain.com"
+
+#Zabbix integration
+ZABBIXSENDER="yes"
+
+# List of DBBNAMES for Monthly Backups.
+MDBNAMES="template1 $DBNAMES"
+
+# List of DBNAMES to EXLUCDE if DBNAMES are set to all (must be in " quotes)
+DBEXCLUDE=""
+
+# Include CREATE DATABASE in backup?
+CREATE_DATABASE=yes
+
+# Which day do you want weekly backups? (1 to 7 where 1 is Monday)
+DOWEEKLY=6
+
+# Choose Compression type. (gzip or bzip2)
+COMP=bzip2
+
+# Command to run before backups (uncomment to use)
+#PREBACKUP="/etc/pgsql-backup-pre"
+
+# Command run after backups (uncomment to use)
+#POSTBACKUP="bash /home/backups/scripts/ftp_pgsql"
