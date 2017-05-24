@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source variables*
+source /usr/local/etc/postgresqlDumpVariables*
 
 PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/postgres/bin:/usr/local/pgsql/bin
 DATE=`date +%Y-%m-%d-%H%M`				# Datestamp e.g 2002-09-21
@@ -95,7 +95,7 @@ dumpdatabase(){
   then
     check pg_dump -h $DBHOST $OPT $CREATEDB -f "$BACKUPNAME" -U $USERNAME "$DB"
   else
-    check pg_dump $DBHOST $OPT -Fc -Z $COMPRESIONLEVEL -f "$BACKUPNAME" -U $USERNAME "$DB"
+    check pg_dump -h $DBHOST $OPT -Fc -Z $COMPRESIONLEVEL -f "$BACKUPNAME" -U $USERNAME "$DB"
   fi
 }
 
